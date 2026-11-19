@@ -1,10 +1,9 @@
-import re
-import unicodedata
 from datetime import date, datetime
 
 from pydantic import BaseModel
 
 from apartworld_ai_assistent.availability import CheckResult, Verdict, check_unit
+from apartworld_ai_assistent.geography import proximity, requested_districts
 from apartworld_ai_assistent.inventory import Inventory
 from apartworld_ai_assistent.models import Listing, Unit
 
@@ -19,6 +18,8 @@ class Offer(BaseModel):
     listings: list[Listing]
     nights: int
     total_price_czk: int
+    # set by rank_by_preferences: "requested" | "nearby" | "other"
+    proximity: str | None = None
 
 
 class SearchResult(BaseModel):
@@ -27,21 +28,24 @@ class SearchResult(BaseModel):
     rejected: list[CheckResult]        # does not fit, never shown to the client
 
 
-def _plain(text: str) -> str:
-    """Lowercase without accents: 'Smíchov' -> 'smichov'."""
-    decomposed = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
-def matches_preferences(unit: Unit, preferences: list[str]) -> bool:
-    district = _plain(unit.district)
-    words = {w for p in preferences for w in re.findall(r"\w+", _plain(p)) if len(w) >= 4}
-    return any(w in district for w in words)
+PROXIMITY_ORDER = {"requested": 0, "nearby": 1, "other": 2}
 
 
 def rank_by_preferences(offers: list[Offer], preferences: list[str]) -> list[Offer]:
-    """Offers in a requested district first; price order is kept inside each group."""
-    return sorted(offers, key=lambda o: not matches_preferences(o.unit, preferences))
+    """Apply the client's district wish.
+
+    - requested district first, then neighbouring districts, price order kept;
+    - other districts are dropped, so the far end of Prague is not offered;
+    - only if nothing is in or near the district, other districts are returned
+      (marked "other") so the client still gets an answer.
+    No known district in the preferences -> offers unchanged.
+    """
+    wanted = requested_districts(preferences)
+    if not wanted:
+        return offers
+    tagged = [o.model_copy(update={"proximity": proximity(o.unit.district, wanted)}) for o in offers]
+    close = [o for o in tagged if o.proximity != "other"]
+    return sorted(close or tagged, key=lambda o: PROXIMITY_ORDER[o.proximity])
 
 
 def _sorted_listings(listings: list[Listing]) -> list[Listing]:

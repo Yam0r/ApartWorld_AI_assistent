@@ -135,6 +135,21 @@ def test_nothing_available_gives_polite_no_options_reply():
 def test_requested_district_offered_first(found):
     smichov = REQUEST.model_copy(update={"preferences": ["near Smíchov"]})
     result, _ = compose(found, request=smichov)
-    # two available units are in Smíchov: they lead, the cheapest other one follows
-    districts = [o.unit.district for o in result.offers]
-    assert ["Smíchov" in d for d in districts] == [True, True, False]
+    # only two Smíchov units are free and no neighbour is: far districts are not offered
+    assert [o.unit.id for o in result.offers] == ["river-deluxe-suite", "victory-castle-suite"]
+    assert "Holešovice" not in result.text
+
+
+def test_nearby_unit_is_labelled(found):
+    # Vinohrady request: Hidden Garden in Žižkov is a neighbour
+    vinohrady = REQUEST.model_copy(update={"preferences": ["Vinohrady"]})
+    result, _ = compose(found, request=vinohrady)
+    assert [o.unit.id for o in result.offers] == ["luxury-lion-suite", "hidden-garden-residence"]
+    assert "Prague 3 · Žižkov (near Vinohrady)" in result.text
+
+
+def test_far_options_are_explained(found):
+    far_away = REQUEST.model_copy(update={"preferences": ["Horní Počernice"], "language": "ru"})
+    text = {"greeting": "Здравствуйте!", "intro": "Спасибо за запрос.", "closing": "Команда Apart World"}
+    result, _ = compose(found, request=far_away, text=text)
+    assert "В районе Horní Počernice и рядом на эти даты свободных вариантов нет" in result.text

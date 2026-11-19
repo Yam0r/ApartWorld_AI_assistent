@@ -127,17 +127,40 @@ def test_scenario_unverified_units_never_offered(scenario_result):
 
 # --- client preferences ---
 
-def test_requested_district_comes_first_and_price_order_kept():
-    inv = Inventory(
-        units=[
-            fresh_unit("cheap-holesovice", price=1000, district="Prague 7 · Holešovice"),
-            fresh_unit("pricey-smichov", price=3000, district="Prague 5 · Smíchov"),
-            fresh_unit("mid-smichov", price=2000, district="Prague 5 · Smíchov"),
-        ],
-        listings=[listing("l1", "cheap-holesovice"), listing("l2", "pricey-smichov"), listing("l3", "mid-smichov")],
+def district_inventory(*units: tuple[str, int, str]) -> Inventory:
+    return Inventory(
+        units=[fresh_unit(uid, price=price, district=district) for uid, price, district in units],
+        listings=[listing(f"l-{uid}", uid) for uid, _, _ in units],
+    )
+
+
+def test_requested_then_nearby_and_far_districts_dropped():
+    inv = district_inventory(
+        ("cheap-holesovice", 1000, "Prague 7 · Holešovice"),   # other end of Prague
+        ("pricey-smichov", 3000, "Prague 5 · Smíchov"),
+        ("mid-smichov", 2000, "Prague 5 · Smíchov"),
+        ("cheap-novemesto", 1500, "Prague 2 · Nové Město"),    # across the river
     )
     ranked = rank_by_preferences(run(inv).available, ["near Smíchov"])
-    assert [o.unit.id for o in ranked] == ["mid-smichov", "pricey-smichov", "cheap-holesovice"]
+    assert [o.unit.id for o in ranked] == ["mid-smichov", "pricey-smichov", "cheap-novemesto"]
+    assert [o.proximity for o in ranked] == ["requested", "requested", "nearby"]
+
+
+def test_only_far_districts_left_are_offered_and_marked_other():
+    inv = district_inventory(
+        ("b-holesovice", 2000, "Prague 7 · Holešovice"),
+        ("a-vrsovice", 1000, "Prague 10 · Vršovice"),
+    )
+    ranked = rank_by_preferences(run(inv).available, ["Smíchov"])
+    assert [o.unit.id for o in ranked] == ["a-vrsovice", "b-holesovice"]
+    assert {o.proximity for o in ranked} == {"other"}
+
+
+def test_unknown_preference_keeps_everything():
+    inv = district_inventory(("a", 1000, "Prague 7 · Holešovice"), ("b", 2000, "Prague 5 · Smíchov"))
+    ranked = rank_by_preferences(run(inv).available, ["quiet", "balcony"])
+    assert [o.unit.id for o in ranked] == ["a", "b"]
+    assert all(o.proximity is None for o in ranked)
 
 
 def test_district_match_ignores_accents_and_case():

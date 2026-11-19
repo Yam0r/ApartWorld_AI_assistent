@@ -13,6 +13,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
+from apartworld_ai_assistent.geography import DISPLAY, requested_districts
 from apartworld_ai_assistent.intake import BookingRequest
 from apartworld_ai_assistent.llm import LlmClient, LlmError
 from apartworld_ai_assistent.search import Offer, SearchResult, rank_by_preferences
@@ -62,16 +63,28 @@ class ReplyResult(BaseModel):
 
 
 LABELS = {
-    "en": {"nights": "nights", "total": "total", "for": "guests", "valid": "Prices valid until",
+    "en": {"nearby": "near {district}",
+           "other": "There is nothing free in {district} or nearby on these dates, "
+                    "so here are options in other districts:",
+           "nights": "nights", "total": "total", "for": "guests", "valid": "Prices valid until",
            "note": "This is an offer, not a confirmed booking. Our manager will confirm "
                    "availability and send the booking details."},
-    "ru": {"nights": "ночей", "total": "итого", "for": "гостей", "valid": "Цены действительны до",
+    "ru": {"nearby": "рядом с районом {district}",
+           "other": "В районе {district} и рядом на эти даты свободных вариантов нет, "
+                    "поэтому предлагаем другие районы:",
+           "nights": "ночей", "total": "итого", "for": "гостей", "valid": "Цены действительны до",
            "note": "Это предложение, а не подтверждённое бронирование. Менеджер подтвердит "
                    "наличие и пришлёт детали брони."},
-    "cs": {"nights": "nocí", "total": "celkem", "for": "hostů", "valid": "Ceny platí do",
+    "cs": {"nearby": "v blízkosti čtvrti {district}",
+           "other": "V lokalitě {district} ani poblíž v těchto termínech nic volného nemáme, "
+                    "proto nabízíme jiné čtvrti:",
+           "nights": "nocí", "total": "celkem", "for": "hostů", "valid": "Ceny platí do",
            "note": "Jde o nabídku, nikoli potvrzenou rezervaci. Náš manažer potvrdí "
                    "dostupnost a pošle detaily rezervace."},
-    "de": {"nights": "Nächte", "total": "gesamt", "for": "Gäste", "valid": "Preise gültig bis",
+    "de": {"nearby": "in der Nähe von {district}",
+           "other": "In {district} und Umgebung ist zu diesen Terminen nichts frei, "
+                    "daher Angebote in anderen Stadtteilen:",
+           "nights": "Nächte", "total": "gesamt", "for": "Gäste", "valid": "Preise gültig bis",
            "note": "Dies ist ein Angebot, keine bestätigte Buchung. Unser Manager bestätigt "
                    "die Verfügbarkeit und sendet die Buchungsdetails."},
 }
@@ -108,11 +121,15 @@ def _money(amount: int) -> str:
 
 def render_options(offers: list[Offer], request: BookingRequest, valid_until: date) -> str:
     l = _labels(request.language)
+    district = " / ".join(sorted(DISPLAY[k] for k in requested_districts(request.preferences)))
     lines = []
+    if offers and all(o.proximity == "other" for o in offers):
+        lines.append(l["other"].format(district=district) + "\n")
     for i, offer in enumerate(offers, 1):
         unit = offer.unit
+        near = f" ({l['nearby'].format(district=district)})" if offer.proximity == "nearby" else ""
         lines.append(
-            f"{i}. {unit.name} — {unit.district}\n"
+            f"{i}. {unit.name} — {unit.district}{near}\n"
             f"   {request.check_in:%d.%m.%Y} – {request.check_out:%d.%m.%Y}, "
             f"{l['nights']}: {offer.nights}, {l['for']}: {request.guests}\n"
             f"   {l['total']}: {_money(offer.total_price_czk)}"
