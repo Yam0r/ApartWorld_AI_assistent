@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,7 @@ from apartworld_ai_assistent.reply import ReplyStatus, compose_reply
 from apartworld_ai_assistent.search import Offer, search
 
 
-class RequestStatus(str, Enum):
+class RequestStatus(StrEnum):
     READY = "ready"                  # reply with verified options
     NEEDS_INFO = "needs_info"        # reply asks the client for missing details
     NO_OPTIONS = "no_options"        # reply says nothing is free
@@ -43,7 +43,8 @@ class ProcessedRequest(BaseModel):
 
 ASK_FOR = {
     "en": ("Thank you for your message! To check availability, please tell us: {items}.",
-           {"dates": "your arrival and departure dates", "guests": "the number of guests"}, "Apart World team"),
+           {"dates": "your arrival and departure dates", "guests": "the number of guests"},
+           "Apart World team"),
     "ru": ("Спасибо за ваше сообщение! Чтобы проверить наличие, пожалуйста, уточните: {items}.",
            {"dates": "даты заезда и выезда", "guests": "количество гостей"}, "Команда Apart World"),
     "cs": ("Děkujeme za Vaši zprávu! Abychom mohli ověřit dostupnost, napište nám prosím: {items}.",
@@ -70,7 +71,7 @@ def _summary(offer: Offer) -> OfferSummary:
         name=offer.unit.name,
         district=offer.unit.district,
         total_price_czk=offer.total_price_czk,
-        url=next((l.url for l in offer.listings if l.url), None),
+        url=next((li.url for li in offer.listings if li.url), None),
         proximity=offer.proximity,
     )
 

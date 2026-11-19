@@ -28,7 +28,7 @@ def test_every_unit_has_a_listing(inventory):
 
 
 def test_river_deluxe_listings_are_one_physical_unit(inventory):
-    names = {l.name for l in inventory.listings_for("river-deluxe-suite")}
+    names = {li.name for li in inventory.listings_for("river-deluxe-suite")}
     assert {"River Deluxe", "River Deluxe 2", "River Deluxe Suite"} <= names
 
 

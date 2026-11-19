@@ -53,7 +53,7 @@ def test_direct_listing_comes_first():
             listing("direct-river", "river", "direct"),
         ],
     )
-    channels = [l.channel for l in run(inv).available[0].listings]
+    channels = [li.channel for li in run(inv).available[0].listings]
     assert channels == ["direct", "living", "booking"]
 
 
@@ -66,7 +66,11 @@ def test_total_price_is_nightly_price_times_nights():
 
 def test_offers_sorted_by_total_price():
     inv = Inventory(
-        units=[fresh_unit("pricey", price=3000), fresh_unit("cheap", price=1000), fresh_unit("mid", price=2000)],
+        units=[
+            fresh_unit("pricey", price=3000),
+            fresh_unit("cheap", price=1000),
+            fresh_unit("mid", price=2000),
+        ],
         listings=[listing("l1", "pricey"), listing("l2", "cheap"), listing("l3", "mid")],
     )
     assert [o.unit.id for o in run(inv).available] == ["cheap", "mid", "pricey"]

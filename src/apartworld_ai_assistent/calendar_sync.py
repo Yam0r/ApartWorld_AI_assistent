@@ -10,7 +10,7 @@ Spec cases covered:
 import threading
 from collections.abc import Callable
 from datetime import date, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -19,7 +19,7 @@ from apartworld_ai_assistent.inventory import Inventory
 from apartworld_ai_assistent.models import BookedPeriod
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     BOOKING_CREATED = "booking_created"
     BOOKING_CANCELLED = "booking_cancelled"
 
@@ -32,13 +32,13 @@ class CalendarEvent(BaseModel):
     check_out: date = Field(examples=["2027-03-13"])
 
     @model_validator(mode="after")
-    def dates_in_order(self) -> "CalendarEvent":
+    def dates_in_order(self) -> CalendarEvent:
         if self.check_out <= self.check_in:
             raise ValueError("check_out must be after check_in")
         return self
 
 
-class EventStatus(str, Enum):
+class EventStatus(StrEnum):
     APPLIED = "applied"                  # calendar updated
     DUPLICATE = "duplicate"              # same event_id seen before: nothing changed
     CONFLICT = "conflict"                # applied, but overlaps another booking: staff alert
@@ -59,7 +59,7 @@ class CalendarSync:
         self._inventory = inventory
         self._now = now
         self._units = {u.id: u for u in inventory.units}
-        self._listings = {l.id: l for l in inventory.listings}
+        self._listings = {li.id: li for li in inventory.listings}
         self._results: dict[str, EventResult] = {}   # event_id -> first result
         self._log: list[EventResult] = []
         self._lock = threading.Lock()

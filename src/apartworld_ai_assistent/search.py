@@ -49,7 +49,7 @@ def rank_by_preferences(offers: list[Offer], preferences: list[str]) -> list[Off
 
 
 def _sorted_listings(listings: list[Listing]) -> list[Listing]:
-    return sorted(listings, key=lambda l: (CHANNEL_ORDER.get(l.channel, 99), l.id))
+    return sorted(listings, key=lambda li: (CHANNEL_ORDER.get(li.channel, 99), li.id))
 
 
 def search(

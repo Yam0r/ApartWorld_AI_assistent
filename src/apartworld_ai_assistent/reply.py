@@ -9,7 +9,7 @@ price, link or contact detail sends the draft to a person.
 import json
 import re
 from datetime import date, timedelta
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
@@ -56,7 +56,7 @@ class ReplyText(BaseModel):
     closing: str
 
 
-class ReplyStatus(str, Enum):
+class ReplyStatus(StrEnum):
     READY = "ready"                  # can be sent (after optional human glance)
     NO_OPTIONS = "no_options"        # polite "nothing available", can be sent
     MANUAL_REVIEW = "manual_review"  # a person has to write or check the reply
@@ -127,25 +127,25 @@ def _money(amount: int) -> str:
 
 
 def render_options(offers: list[Offer], request: BookingRequest, valid_until: date) -> str:
-    l = _labels(request.language)
+    labels = _labels(request.language)
     district = " / ".join(sorted(DISPLAY[k] for k in requested_districts(request.preferences)))
     lines = []
     if offers and all(o.proximity == "other" for o in offers):
-        lines.append(l["other"].format(district=district) + "\n")
+        lines.append(labels["other"].format(district=district) + "\n")
     for i, offer in enumerate(offers, 1):
         unit = offer.unit
-        near = f" ({l['nearby'].format(district=district)})" if offer.proximity == "nearby" else ""
+        near = f" ({labels['nearby'].format(district=district)})" if offer.proximity == "nearby" else ""
         lines.append(
             f"{i}. {unit.name} — {unit.district}{near}\n"
             f"   {request.check_in:%d.%m.%Y} – {request.check_out:%d.%m.%Y}, "
-            f"{l['nights']}: {offer.nights}, {l['for']}: {request.guests}\n"
-            f"   {l['total']}: {_money(offer.total_price_czk)}"
+            f"{labels['nights']}: {offer.nights}, {labels['for']}: {request.guests}\n"
+            f"   {labels['total']}: {_money(offer.total_price_czk)}"
         )
         url = next((li.url for li in offer.listings if li.url), None)
         if url:
             lines.append(f"   {url}")
-    lines.append(f"\n{l['valid']} {valid_until:%d.%m.%Y}.")
-    lines.append(l["note"])
+    lines.append(f"\n{labels['valid']} {valid_until:%d.%m.%Y}.")
+    lines.append(labels["note"])
     return "\n".join(lines)
 
 

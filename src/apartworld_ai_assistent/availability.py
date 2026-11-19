@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
@@ -8,7 +8,7 @@ from apartworld_ai_assistent.models import Unit
 MAX_CALENDAR_AGE = timedelta(hours=24)
 
 
-class Verdict(str, Enum):
+class Verdict(StrEnum):
     AVAILABLE = "available"
     REJECTED = "rejected"
     MANUAL_REVIEW = "manual_review"

@@ -106,7 +106,7 @@ class OpenAiCompatibleClient:
         self._sleep = sleep
 
     @classmethod
-    def from_env(cls) -> "OpenAiCompatibleClient":
+    def from_env(cls) -> OpenAiCompatibleClient:
         from dotenv import load_dotenv
 
         load_dotenv()

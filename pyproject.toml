@@ -1,7 +1,7 @@
 [project]
 name = "apartworld-ai-assistent"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI assistant for direct bookings: incoming email -> verified offer or a task for staff"
 readme = "README.md"
 authors = [
     { name = "Yarolsav", email = "kiritok712@gmail.com" }
@@ -12,7 +12,6 @@ dependencies = [
     "openai>=3.55.1",
     "pydantic>=2.14.3",
     "python-dotenv>=1.2.4",
-    "sqlalchemy>=2.1.9",
     "uvicorn>=0.54.0",
 ]
 
@@ -27,8 +26,17 @@ build-backend = "uv_build"
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.2.0",
+    "ruff>=0.17.5",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py314"
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, isort, bugbear, pyupgrade, simplify
+select = ["F", "E", "W", "I", "B", "UP", "SIM"]

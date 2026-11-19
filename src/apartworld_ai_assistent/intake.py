@@ -5,7 +5,7 @@ are the dates valid, does it need a human) is made by code below.
 """
 
 from datetime import date, timedelta
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -62,7 +62,7 @@ class BookingRequest(BaseModel):
     client_name: str | None = None
 
 
-class IntakeStatus(str, Enum):
+class IntakeStatus(StrEnum):
     READY = "ready"                  # go to search
     NEEDS_INFO = "needs_info"        # ask the client for missing fields
     MANUAL_REVIEW = "manual_review"  # a person has to look at it

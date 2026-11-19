@@ -13,11 +13,11 @@ class Inventory(BaseModel):
     listings: list[Listing]
 
     @model_validator(mode="after")
-    def check_references(self) -> "Inventory":
+    def check_references(self) -> Inventory:
         unit_ids = [u.id for u in self.units]
         if len(unit_ids) != len(set(unit_ids)):
             raise ValueError("duplicate unit id")
-        listing_ids = [l.id for l in self.listings]
+        listing_ids = [li.id for li in self.listings]
         if len(listing_ids) != len(set(listing_ids)):
             raise ValueError("duplicate listing id")
         known = set(unit_ids)
@@ -27,7 +27,7 @@ class Inventory(BaseModel):
         return self
 
     def listings_for(self, unit_id: str) -> list[Listing]:
-        return [l for l in self.listings if l.unit_id == unit_id]
+        return [li for li in self.listings if li.unit_id == unit_id]
 
 
 def load_inventory(path: Path = DEFAULT_PATH) -> Inventory:
