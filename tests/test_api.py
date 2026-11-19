@@ -106,3 +106,67 @@ def test_empty_email_is_rejected(client):
 def test_swagger_is_available(client):
     assert client.get("/docs").status_code == 200
     assert "/review-queue" in client.get("/openapi.json").json()["paths"]
+
+
+# --- staff closes review items ---
+
+@pytest.fixture
+def queued():
+    """A client whose LLM is down, so every email lands in the review queue."""
+    client = client_with({ExtractedRequest: LlmError("503"), ReplyText: REPLY})
+    item = post(client)
+    return client, item["id"]
+
+
+def resolve(client, request_id, **body):
+    return client.post(f"/review-queue/{request_id}/resolve", json={"resolved_by": "dmitrij", **body})
+
+
+def test_staff_reply_closes_the_item(queued):
+    client, rid = queued
+    response = resolve(client, rid, action="reply_sent", reply_text="Dear Anna, we checked by hand...")
+    assert response.status_code == 200
+    resolution = response.json()["resolution"]
+    assert resolution["action"] == "reply_sent"
+    assert resolution["resolved_by"] == "dmitrij"
+    assert resolution["reply_text"].startswith("Dear Anna")
+    assert resolution["resolved_at"] == NOW.isoformat()
+    assert client.get("/review-queue").json() == []
+    assert client.get(f"/requests/{rid}").json()["resolution"]["action"] == "reply_sent"
+
+
+def test_dismiss_needs_no_text(queued):
+    client, rid = queued
+    response = resolve(client, rid, action="dismissed", note="spam")
+    assert response.status_code == 200
+    assert response.json()["resolution"]["note"] == "spam"
+    assert response.json()["resolution"]["reply_text"] is None
+
+
+def test_reply_without_any_text_is_rejected(queued):
+    client, rid = queued
+    assert resolve(client, rid, action="reply_sent").status_code == 422
+    assert len(client.get("/review-queue").json()) == 1  # still waiting
+
+
+def test_item_cannot_be_resolved_twice(queued):
+    client, rid = queued
+    resolve(client, rid, action="dismissed")
+    second = resolve(client, rid, action="reply_sent", reply_text="late answer")
+    assert second.status_code == 409
+    assert client.get(f"/requests/{rid}").json()["resolution"]["action"] == "dismissed"
+
+
+def test_only_review_items_can_be_resolved(client):
+    rid = post(client)["id"]  # status ready
+    assert resolve(client, rid, action="dismissed").status_code == 409
+
+
+def test_resolve_unknown_request_is_404(client):
+    assert resolve(client, "nope", action="dismissed").status_code == 404
+
+
+def test_resolved_by_is_required(queued):
+    client, rid = queued
+    response = client.post(f"/review-queue/{rid}/resolve", json={"action": "dismissed"})
+    assert response.status_code == 422

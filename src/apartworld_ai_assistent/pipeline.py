@@ -29,6 +29,19 @@ class OfferSummary(BaseModel):
     proximity: str | None
 
 
+class ResolutionAction(StrEnum):
+    REPLY_SENT = "reply_sent"  # staff answered the client (own text or the draft)
+    DISMISSED = "dismissed"    # no reply needed: spam, duplicate, handled by phone...
+
+
+class Resolution(BaseModel):
+    action: ResolutionAction
+    resolved_by: str
+    resolved_at: datetime
+    reply_text: str | None = None
+    note: str | None = None
+
+
 class ProcessedRequest(BaseModel):
     id: str
     received_at: datetime
@@ -39,6 +52,7 @@ class ProcessedRequest(BaseModel):
     missing: list[str] = Field(default_factory=list)
     request: BookingRequest | None = None
     offers: list[OfferSummary] = Field(default_factory=list)
+    resolution: Resolution | None = None  # set when a person closed the review item
 
 
 ASK_FOR = {

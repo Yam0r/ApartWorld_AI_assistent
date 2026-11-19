@@ -15,13 +15,28 @@ from pydantic import BaseModel, Field
 from apartworld_ai_assistent.calendar_sync import CalendarEvent, CalendarSync, EventResult
 from apartworld_ai_assistent.inventory import Inventory, load_inventory
 from apartworld_ai_assistent.llm import LlmClient, OpenAiCompatibleClient
-from apartworld_ai_assistent.pipeline import ProcessedRequest, RequestStatus, handle_email
+from apartworld_ai_assistent.pipeline import (
+    ProcessedRequest,
+    RequestStatus,
+    Resolution,
+    ResolutionAction,
+    handle_email,
+)
 
 
 class EmailIn(BaseModel):
     email: str = Field(min_length=1, max_length=10_000, examples=[
         "Hi, we are 4 colleagues, 10-13 March 2027, near Smíchov. Thanks, Anna",
     ])
+
+
+class ResolveIn(BaseModel):
+    action: ResolutionAction
+    resolved_by: str = Field(min_length=1, examples=["dmitrij"])
+    reply_text: str | None = Field(default=None, max_length=10_000, examples=[
+        "Dobrý den, termín jsme ověřili ručně: River Deluxe Suite je volný. ...",
+    ])
+    note: str | None = Field(default=None, max_length=2_000, examples=["calendar checked in Guesty"])
 
 
 class RequestStore:
@@ -37,6 +52,20 @@ class RequestStore:
 
     def get(self, item_id: str) -> ProcessedRequest | None:
         return self._items.get(item_id)
+
+    def resolve(self, item_id: str, resolution: Resolution) -> ProcessedRequest:
+        """Close a review item once. Raises KeyError / ValueError for the API to map."""
+        with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                raise KeyError(item_id)
+            if item.status != RequestStatus.MANUAL_REVIEW:
+                raise ValueError("request is not in the review queue")
+            if item.resolution is not None:
+                raise ValueError("already resolved")
+            updated = item.model_copy(update={"resolution": resolution})
+            self._items[item_id] = updated
+            return updated
 
     def list(self, status: RequestStatus | None = None) -> list[ProcessedRequest]:
         with self._lock:
@@ -85,8 +114,27 @@ def create_app(
 
     @app.get("/review-queue", tags=["staff"])
     def review_queue() -> list[ProcessedRequest]:
-        """Emails a person has to handle, oldest first."""
-        return store.list(RequestStatus.MANUAL_REVIEW)
+        """Emails a person still has to handle, oldest first. Resolved ones drop out."""
+        return [i for i in store.list(RequestStatus.MANUAL_REVIEW) if i.resolution is None]
+
+    @app.post("/review-queue/{request_id}/resolve", tags=["staff"])
+    def resolve_review_item(request_id: str, body: ResolveIn) -> ProcessedRequest:
+        """Staff closes a queue item: answered the client, or dismissed it."""
+        item = store.get(request_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        reply_text = body.reply_text or item.reply_text
+        if body.action == ResolutionAction.REPLY_SENT and not reply_text:
+            raise HTTPException(status_code=422, detail="reply_text is required: there is no draft to send")
+        resolution = Resolution(
+            action=body.action, resolved_by=body.resolved_by, resolved_at=now(),
+            reply_text=reply_text if body.action == ResolutionAction.REPLY_SENT else None,
+            note=body.note,
+        )
+        try:
+            return store.resolve(request_id, resolution)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/webhooks/calendar", tags=["webhooks"])
     def calendar_webhook(event: CalendarEvent) -> EventResult:
