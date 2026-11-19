@@ -17,6 +17,22 @@ class LlmError(Exception):
     """The model could not be reached or returned unusable output."""
 
 
+def _type_hint(prop: dict) -> str:
+    if "anyOf" in prop:
+        return " or ".join(_type_hint(p) for p in prop["anyOf"])
+    if prop.get("format") == "date":
+        return "YYYY-MM-DD"
+    if prop.get("type") == "array":
+        return f"list of {_type_hint(prop.get('items', {}))}"
+    return prop.get("type", "any")
+
+
+def output_shape(schema: type[BaseModel]) -> dict[str, str]:
+    """{"check_in": "YYYY-MM-DD or null", "guests": "integer or null", ...}"""
+    props = schema.model_json_schema()["properties"]
+    return {name: _type_hint(prop) for name, prop in props.items()}
+
+
 class LlmClient(Protocol):
     def extract(self, system_prompt: str, user_text: str, schema: type[T]) -> T:
         """Return an instance of `schema` extracted from `user_text`."""
@@ -47,7 +63,8 @@ class OpenAiCompatibleClient:
     def __init__(self, base_url: str, api_key: str, model: str):
         from openai import OpenAI
 
-        self._client = OpenAI(base_url=base_url, api_key=api_key)
+        # Fail fast instead of hanging: the SDK default is 10 min and 2 retries.
+        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=30, max_retries=1)
         self._model = model
 
     @classmethod
@@ -65,7 +82,9 @@ class OpenAiCompatibleClient:
             raise LlmError(f"missing setting {e} in .env (see .env.example)") from e
 
     def extract(self, system_prompt: str, user_text: str, schema: type[T]) -> T:
-        schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
+        # A flat example is easier for small models than a full JSON schema,
+        # which they tend to echo back ({"properties": {...}}).
+        shape = json.dumps(output_shape(schema), ensure_ascii=False, indent=2)
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
@@ -74,8 +93,8 @@ class OpenAiCompatibleClient:
                 messages=[
                     {
                         "role": "system",
-                        "content": f"{system_prompt}\n\nReply with a single JSON object "
-                                   f"matching this JSON schema:\n{schema_json}",
+                        "content": f"{system_prompt}\n\nReply with ONE flat JSON object with "
+                                   f"exactly these keys (values show the expected type):\n{shape}",
                     },
                     {"role": "user", "content": user_text},
                 ],

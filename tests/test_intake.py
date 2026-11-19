@@ -77,11 +77,22 @@ def test_garbage_llm_output_goes_to_manual_review():
     assert result.status == IntakeStatus.MANUAL_REVIEW
 
 
-def test_extra_fields_from_llm_are_dropped():
-    # Even if the model is tricked into adding fields, they never reach the request.
+def test_extra_fields_from_llm_go_to_manual_review():
+    # If the model is tricked into adding fields, a person looks at the email.
     result = parse_email(EMAIL, llm_answer(owner_phone="+420 000", internal_prices="..."), TODAY)
-    assert result.status == IntakeStatus.READY
-    assert "owner_phone" not in result.request.model_dump()
+    assert result.status == IntakeStatus.MANUAL_REVIEW
+    assert result.request is None
+
+
+def test_answer_wrapped_in_schema_shape_is_not_read_as_empty():
+    # Real bug seen with Gemini Flash Lite: {"description": ..., "properties": {...}}
+    llm = FakeLlmClient(answer={
+        "description": "4 colleagues",
+        "properties": {"check_in": "2027-03-10", "check_out": "2027-03-13", "guests": 4},
+    })
+    result = parse_email(EMAIL, llm, TODAY)
+    assert result.status == IntakeStatus.MANUAL_REVIEW
+    assert result.status != IntakeStatus.NEEDS_INFO
 
 
 def test_email_is_wrapped_as_data_and_cannot_close_the_tag():

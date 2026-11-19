@@ -7,7 +7,7 @@ are the dates valid, does it need a human) is made by code below.
 from datetime import date, timedelta
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from apartworld_ai_assistent.llm import LlmClient, LlmError
 
@@ -30,7 +30,13 @@ Rules:
 
 
 class ExtractedRequest(BaseModel):
-    """Raw fields as the LLM read them. Anything can be missing or wrong."""
+    """Raw fields as the LLM read them. Anything can be missing or wrong.
+
+    Unknown keys are rejected: a wrapped answer ({"properties": {...}}) or
+    fields an injected email asked for must fail loudly, not pass as empty.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     check_in: date | None = None
     check_out: date | None = None
