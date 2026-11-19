@@ -26,6 +26,8 @@ Rules:
 - Do not guess. If a value is not stated, use null.
 - language: ISO 639-1 code of the language the email is written in.
 - budget_czk: only if the budget is stated in CZK or clearly convertible; otherwise null.
+- preferences: short phrases. Write Prague district names in Czech
+  (e.g. "Smíchov", "Vinohrady", "Holešovice"), whatever language the email uses.
 """
 
 

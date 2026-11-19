@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from datetime import date, datetime
 
 from pydantic import BaseModel
@@ -23,6 +25,23 @@ class SearchResult(BaseModel):
     available: list[Offer]             # can be offered to the client
     manual_review: list[CheckResult]   # a human has to check before offering
     rejected: list[CheckResult]        # does not fit, never shown to the client
+
+
+def _plain(text: str) -> str:
+    """Lowercase without accents: 'Smíchov' -> 'smichov'."""
+    decomposed = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def matches_preferences(unit: Unit, preferences: list[str]) -> bool:
+    district = _plain(unit.district)
+    words = {w for p in preferences for w in re.findall(r"\w+", _plain(p)) if len(w) >= 4}
+    return any(w in district for w in words)
+
+
+def rank_by_preferences(offers: list[Offer], preferences: list[str]) -> list[Offer]:
+    """Offers in a requested district first; price order is kept inside each group."""
+    return sorted(offers, key=lambda o: not matches_preferences(o.unit, preferences))
 
 
 def _sorted_listings(listings: list[Listing]) -> list[Listing]:

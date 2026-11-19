@@ -3,7 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from apartworld_ai_assistent.inventory import Inventory, load_inventory
-from apartworld_ai_assistent.search import search
+from apartworld_ai_assistent.search import rank_by_preferences, search
 
 NOW = datetime(2026, 11, 19, 12, 0)
 CHECK_IN = date(2027, 3, 10)
@@ -123,3 +123,36 @@ def test_scenario_unverified_units_never_offered(scenario_result):
     assert {r.unit_id for r in scenario_result.manual_review} == {
         "white-rabbit-residence", "london-royal-residence",
     }
+
+
+# --- client preferences ---
+
+def test_requested_district_comes_first_and_price_order_kept():
+    inv = Inventory(
+        units=[
+            fresh_unit("cheap-holesovice", price=1000, district="Prague 7 · Holešovice"),
+            fresh_unit("pricey-smichov", price=3000, district="Prague 5 · Smíchov"),
+            fresh_unit("mid-smichov", price=2000, district="Prague 5 · Smíchov"),
+        ],
+        listings=[listing("l1", "cheap-holesovice"), listing("l2", "pricey-smichov"), listing("l3", "mid-smichov")],
+    )
+    ranked = rank_by_preferences(run(inv).available, ["near Smíchov"])
+    assert [o.unit.id for o in ranked] == ["mid-smichov", "pricey-smichov", "cheap-holesovice"]
+
+
+def test_district_match_ignores_accents_and_case():
+    inv = Inventory(
+        units=[fresh_unit("a", price=1000, district="Prague 7 · Holešovice"),
+               fresh_unit("b", price=2000, district="Prague 5 · Smíchov")],
+        listings=[listing("l1", "a"), listing("l2", "b")],
+    )
+    ranked = rank_by_preferences(run(inv).available, ["SMICHOV please"])
+    assert ranked[0].unit.id == "b"
+
+
+def test_no_preferences_keeps_price_order():
+    inv = Inventory(
+        units=[fresh_unit("a", price=2000), fresh_unit("b", price=1000)],
+        listings=[listing("l1", "a"), listing("l2", "b")],
+    )
+    assert [o.unit.id for o in rank_by_preferences(run(inv).available, [])] == ["b", "a"]
