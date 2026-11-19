@@ -12,6 +12,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from apartworld_ai_assistent.calendar_sync import CalendarEvent, CalendarSync, EventResult
 from apartworld_ai_assistent.inventory import Inventory, load_inventory
 from apartworld_ai_assistent.llm import LlmClient, OpenAiCompatibleClient
 from apartworld_ai_assistent.pipeline import ProcessedRequest, RequestStatus, handle_email
@@ -56,6 +57,7 @@ def create_app(
         version="0.1.0",
     )
     store = RequestStore()
+    calendar = CalendarSync(inventory, now)
     app.state.store = store
 
     @app.get("/health", tags=["service"])
@@ -85,6 +87,16 @@ def create_app(
     def review_queue() -> list[ProcessedRequest]:
         """Emails a person has to handle, oldest first."""
         return store.list(RequestStatus.MANUAL_REVIEW)
+
+    @app.post("/webhooks/calendar", tags=["webhooks"])
+    def calendar_webhook(event: CalendarEvent) -> EventResult:
+        """Booking created / cancelled on a channel. Safe to deliver twice."""
+        return calendar.apply(event)
+
+    @app.get("/calendar-events", tags=["staff"])
+    def calendar_events(alerts_only: bool = False) -> list[EventResult]:
+        """Webhook log; alerts_only=true shows conflicts and unknown listings."""
+        return calendar.log(only_alerts=alerts_only)
 
     return app
 
