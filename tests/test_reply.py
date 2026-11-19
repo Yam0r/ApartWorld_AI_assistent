@@ -19,7 +19,7 @@ REQUEST = BookingRequest(
 GOOD_TEXT = {
     "greeting": "Dear Anna,",
     "intro": "Thank you for your request for 10-13 March 2027 for 4 guests. Here are our options:",
-    "closing": "We look forward to hosting you. Apart World team",
+    "closing": "We look forward to hosting you.",
 }
 
 
@@ -64,7 +64,7 @@ def test_price_validity_and_not_confirmed_note(found):
 
 def test_labels_follow_client_language(found):
     ru = REQUEST.model_copy(update={"language": "ru"})
-    text = {"greeting": "Здравствуйте, Анна!", "intro": "Спасибо за запрос.", "closing": "Команда Apart World"}
+    text = {"greeting": "Здравствуйте, Анна!", "intro": "Спасибо за запрос.", "closing": "Будем рады помочь."}
     result, _ = compose(found, text=text, request=ru)
     assert "итого" in result.text and "Цены действительны до" in result.text
 
@@ -125,7 +125,7 @@ def test_only_unverified_options_go_to_a_person():
 def test_nothing_available_gives_polite_no_options_reply():
     empty = SearchResult(available=[], manual_review=[], rejected=[])
     text = {"greeting": "Dear Anna,", "intro": "Unfortunately nothing is free on these dates.",
-            "closing": "We would be happy to check other dates. Apart World team"}
+            "closing": "We would be happy to check other dates."}
     result = compose_reply(REQUEST, empty, FakeLlmClient(answer=text), TODAY)
     assert result.status == ReplyStatus.NO_OPTIONS
     assert "nothing is free" in result.text
@@ -150,6 +150,39 @@ def test_nearby_unit_is_labelled(found):
 
 def test_far_options_are_explained(found):
     far_away = REQUEST.model_copy(update={"preferences": ["Horní Počernice"], "language": "ru"})
-    text = {"greeting": "Здравствуйте!", "intro": "Спасибо за запрос.", "closing": "Команда Apart World"}
+    text = {"greeting": "Здравствуйте!", "intro": "Спасибо за запрос.", "closing": "Будем рады помочь."}
     result, _ = compose(found, request=far_away, text=text)
     assert "В районе Horní Počernice и рядом на эти даты свободных вариантов нет" in result.text
+
+
+# --- signature ---
+
+def test_signature_is_added_by_code_on_separate_lines(found):
+    result, _ = compose(found)
+    assert result.text.endswith("We look forward to hosting you.\n\nBest regards,\nApart World team")
+
+
+def test_signature_follows_client_language(found):
+    cs = REQUEST.model_copy(update={"language": "cs"})
+    text = {"greeting": "Dobrý den,", "intro": "Děkujeme.", "closing": "Těšíme se na Vás!"}
+    result, _ = compose(found, text=text, request=cs)
+    assert result.text.endswith("Těšíme se na Vás!\n\nS pozdravem,\ntým Apart World")
+
+
+@pytest.mark.parametrize("closing, expected", [
+    ("Please let us know. Warm regards, Apart World.", "Please let us know."),
+    ("Будем рады помочь с бронированием. С уважением, Apart World", "Будем рады помочь с бронированием."),
+    ("Будем рады помочь. С теплом, команда Apart World team.", "Будем рады помочь."),
+    ("Těšíme se na vás!\nTým Apart World", "Těšíme se na vás!"),
+    ("We look forward to hosting you.", "We look forward to hosting you."),
+    ("Apart World team", "Apart World team"),  # nothing else left: keep as is
+])
+def test_model_signoff_is_removed(closing, expected):
+    from apartworld_ai_assistent.reply import strip_signoff
+    assert strip_signoff(closing) == expected
+
+
+def test_no_double_signature_when_model_signs_anyway(found):
+    result, _ = compose(found, text={**GOOD_TEXT, "closing": "See you soon! Best regards, Apart World team"})
+    assert result.text.count("Apart World team") == 1
+    assert result.text.endswith("See you soon!\n\nBest regards,\nApart World team")

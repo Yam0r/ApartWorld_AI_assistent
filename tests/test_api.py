@@ -15,7 +15,7 @@ NOW = datetime(2026, 11, 19, 12, 0)
 EXTRACTED = {"check_in": "2027-03-10", "check_out": "2027-03-13", "guests": 4,
              "language": "en", "preferences": ["Smíchov"], "client_name": "Anna"}
 REPLY = {"greeting": "Dear Anna,", "intro": "Here are our options for your stay.",
-         "closing": "We look forward to hosting you. Apart World team"}
+         "closing": "We look forward to hosting you."}
 
 
 class SchemaFakeLlm:
