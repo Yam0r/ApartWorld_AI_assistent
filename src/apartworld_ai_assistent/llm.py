@@ -6,6 +6,7 @@ in tests) can be swapped without touching business logic.
 
 import json
 import os
+import time
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -57,15 +58,52 @@ class FakeLlmClient:
             raise LlmError(f"invalid model output: {e}") from e
 
 
+# HTTP statuses worth retrying: overloaded, rate limited, temporary server errors.
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+# Statuses where another model may still work (model missing or refused).
+TRY_NEXT_MODEL_STATUS = RETRYABLE_STATUS | {403, 404}
+
+
+def _status_of(error: Exception) -> int | None:
+    return getattr(error, "status_code", None)
+
+
+def _is_retryable(error: Exception) -> bool:
+    from openai import APIConnectionError, APITimeoutError
+
+    if isinstance(error, (APITimeoutError, APIConnectionError)):
+        return True
+    return _status_of(error) in RETRYABLE_STATUS
+
+
 class OpenAiCompatibleClient:
-    """Works with any OpenAI-compatible API: OpenAI, Gemini, Groq, Ollama..."""
+    """Works with any OpenAI-compatible API: OpenAI, Gemini, Groq, Ollama...
 
-    def __init__(self, base_url: str, api_key: str, model: str):
-        from openai import OpenAI
+    On temporary errors (503, 429, timeouts) the request is retried with a
+    growing pause; if the main model keeps failing, the fallback model is tried.
+    """
 
-        # Fail fast instead of hanging: the SDK default is 10 min and 2 retries.
-        self._client = OpenAI(base_url=base_url, api_key=api_key, timeout=30, max_retries=1)
-        self._model = model
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        fallback_model: str | None = None,
+        attempts: int = 3,
+        backoff_seconds: float = 1.0,
+        sleep=time.sleep,
+        client=None,
+    ):
+        if client is None:
+            from openai import OpenAI
+
+            # Retries are done here, not by the SDK (its default waits up to 10 min).
+            client = OpenAI(base_url=base_url, api_key=api_key, timeout=20, max_retries=0)
+        self._client = client
+        self.models = [model] + ([fallback_model] if fallback_model and fallback_model != model else [])
+        self._attempts = attempts
+        self._backoff = backoff_seconds
+        self._sleep = sleep
 
     @classmethod
     def from_env(cls) -> "OpenAiCompatibleClient":
@@ -77,33 +115,52 @@ class OpenAiCompatibleClient:
                 base_url=os.environ["LLM_BASE_URL"],
                 api_key=os.environ["LLM_API_KEY"],
                 model=os.environ["LLM_MODEL"],
+                fallback_model=os.environ.get("LLM_FALLBACK_MODEL") or None,
             )
         except KeyError as e:
             raise LlmError(f"missing setting {e} in .env (see .env.example)") from e
+
+    def _create(self, model: str, messages: list[dict]):
+        """One model: retry temporary errors with 1 s, 2 s, 4 s... pauses."""
+        for attempt in range(self._attempts):
+            try:
+                return self._client.chat.completions.create(
+                    model=model,
+                    temperature=0,
+                    response_format={"type": "json_object"},
+                    messages=messages,
+                )
+            except Exception as e:
+                if not _is_retryable(e) or attempt == self._attempts - 1:
+                    raise
+                self._sleep(self._backoff * 2 ** attempt)
 
     def extract(self, system_prompt: str, user_text: str, schema: type[T]) -> T:
         # A flat example is easier for small models than a full JSON schema,
         # which they tend to echo back ({"properties": {...}}).
         shape = json.dumps(output_shape(schema), ensure_ascii=False, indent=2)
-        try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                temperature=0,
-                response_format={"type": "json_object"},
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"{system_prompt}\n\nReply with ONE flat JSON object with "
-                                   f"exactly these keys (values show the expected type):\n{shape}",
-                    },
-                    {"role": "user", "content": user_text},
-                ],
-            )
-        except Exception as e:  # network, auth, rate limit...
-            raise LlmError(f"LLM request failed: {e}") from e
+        messages = [
+            {
+                "role": "system",
+                "content": f"{system_prompt}\n\nReply with ONE flat JSON object with "
+                           f"exactly these keys (values show the expected type):\n{shape}",
+            },
+            {"role": "user", "content": user_text},
+        ]
 
-        content = response.choices[0].message.content or ""
-        try:
-            return schema.model_validate_json(content)
-        except ValueError as e:
-            raise LlmError(f"invalid model output: {e}") from e
+        errors = []
+        for model in self.models:
+            try:
+                response = self._create(model, messages)
+            except Exception as e:  # network, auth, rate limit...
+                errors.append(f"{model}: {e}")
+                if _is_retryable(e) or _status_of(e) in TRY_NEXT_MODEL_STATUS:
+                    continue
+                break  # e.g. 400/401: another model will not help
+            content = response.choices[0].message.content or ""
+            try:
+                return schema.model_validate_json(content)
+            except ValueError as e:
+                raise LlmError(f"invalid model output: {e}") from e
+
+        raise LlmError("LLM request failed: " + "; ".join(errors))
