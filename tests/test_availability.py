@@ -7,7 +7,6 @@ from apartworld_ai_assistent.models import BookedPeriod, Unit
 
 NOW = datetime(2026, 11, 19, 12, 0)
 
-# Default request: 3 nights, 10-13 March 2027, 2 guests.
 CHECK_IN = date(2027, 3, 10)
 CHECK_OUT = date(2027, 3, 13)
 
