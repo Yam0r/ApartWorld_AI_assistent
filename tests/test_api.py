@@ -170,3 +170,15 @@ def test_resolved_by_is_required(queued):
     client, rid = queued
     response = client.post(f"/review-queue/{rid}/resolve", json={"action": "dismissed"})
     assert response.status_code == 422
+
+
+def test_error_responses_are_documented_in_swagger(client):
+    paths = client.get("/openapi.json").json()["paths"]
+    resolve_codes = paths["/review-queue/{request_id}/resolve"]["post"]["responses"]
+    assert {"200", "404", "409", "422"} <= set(resolve_codes)
+    assert "404" in paths["/requests/{request_id}"]["get"]["responses"]
+
+
+def test_swagger_example_does_not_impersonate_a_real_person(client):
+    schema = client.get("/openapi.json").json()["components"]["schemas"]["ResolveIn"]
+    assert schema["properties"]["resolved_by"]["examples"] == ["staff-name"]

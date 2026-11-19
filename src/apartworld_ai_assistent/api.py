@@ -32,11 +32,22 @@ class EmailIn(BaseModel):
 
 class ResolveIn(BaseModel):
     action: ResolutionAction
-    resolved_by: str = Field(min_length=1, examples=["dmitrij"])
+    resolved_by: str = Field(min_length=1, examples=["staff-name"])
     reply_text: str | None = Field(default=None, max_length=10_000, examples=[
-        "Dobrý den, termín jsme ověřili ručně: River Deluxe Suite je volný. ...",
+        "Text you sent to the client (optional if the assistant prepared a draft)",
     ])
-    note: str | None = Field(default=None, max_length=2_000, examples=["calendar checked in Guesty"])
+    note: str | None = Field(default=None, max_length=2_000, examples=["internal note, optional"])
+
+
+class ErrorOut(BaseModel):
+    detail: str
+
+
+NOT_FOUND = {404: {"model": ErrorOut, "description": "No request with this id"}}
+CONFLICT = {409: {
+    "model": ErrorOut,
+    "description": "Already resolved, or the request is not in the review queue",
+}}
 
 
 class RequestStore:
@@ -105,7 +116,7 @@ def create_app(
     def list_requests(status: RequestStatus | None = None) -> list[ProcessedRequest]:
         return store.list(status)
 
-    @app.get("/requests/{request_id}", tags=["requests"])
+    @app.get("/requests/{request_id}", tags=["requests"], responses=NOT_FOUND)
     def get_request(request_id: str) -> ProcessedRequest:
         item = store.get(request_id)
         if item is None:
@@ -117,7 +128,7 @@ def create_app(
         """Emails a person still has to handle, oldest first. Resolved ones drop out."""
         return [i for i in store.list(RequestStatus.MANUAL_REVIEW) if i.resolution is None]
 
-    @app.post("/review-queue/{request_id}/resolve", tags=["staff"])
+    @app.post("/review-queue/{request_id}/resolve", tags=["staff"], responses={**NOT_FOUND, **CONFLICT})
     def resolve_review_item(request_id: str, body: ResolveIn) -> ProcessedRequest:
         """Staff closes a queue item: answered the client, or dismissed it."""
         item = store.get(request_id)
