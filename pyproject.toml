@@ -1,0 +1,30 @@
+[project]
+name = "apartworld-ai-assistent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Yarolsav", email = "kiritok712@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.165.0",
+    "pydantic>=2.14.3",
+    "sqlalchemy>=2.1.9",
+]
+
+[project.scripts]
+apartworld-ai-assistent = "apartworld_ai_assistent:main"
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
