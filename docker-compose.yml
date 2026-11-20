@@ -1,3 +1,5 @@
+# Whole system:          docker compose up --build      (API on http://localhost:8000)
+# Only the database:     docker compose up -d db         (for running the API with uv locally)
 services:
   db:
     image: postgres:17-alpine
@@ -14,6 +16,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    build: .
+    env_file:
+      - path: .env          # LLM key and settings (copy .env.example to .env)
+        required: false
+    environment:
+      # Inside Docker the database is the "db" service, not localhost:5433.
+      DATABASE_URL: postgresql+psycopg://apart:apart@db:5432/apartworld
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:

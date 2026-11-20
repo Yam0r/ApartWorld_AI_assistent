@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from apartworld_ai_assistent.calendar_sync import CalendarEvent, CalendarSync, EventResult
@@ -72,6 +73,11 @@ def create_app(
     store = requests or InMemoryRequestStore()
     calendar = CalendarSync(inventory, now, events or InMemoryEventStore())
     app.state.store = store
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        """Opening the bare address shows the API documentation."""
+        return RedirectResponse("/docs")
 
     @app.get("/health", tags=["service"])
     def health() -> dict:

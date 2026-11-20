@@ -1,0 +1,16 @@
+# Secrets: the key is passed at runtime via env_file, never baked into the image
+.env
+
+# Local environments and caches
+.venv
+__pycache__
+*.py[oc]
+.pytest_cache
+.ruff_cache
+
+# Not needed to run the service
+.git
+.github
+.vscode
+tests
+scripts

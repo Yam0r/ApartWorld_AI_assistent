@@ -182,3 +182,10 @@ def test_error_responses_are_documented_in_swagger(client):
 def test_swagger_example_does_not_impersonate_a_real_person(client):
     schema = client.get("/openapi.json").json()["components"]["schemas"]["ResolveIn"]
     assert schema["properties"]["resolved_by"]["examples"] == ["staff-name"]
+
+
+def test_root_redirects_to_swagger(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+    assert "/" not in client.get("/openapi.json").json()["paths"]
