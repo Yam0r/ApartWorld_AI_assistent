@@ -48,7 +48,7 @@ def post(client, email="We are 4, 10-13 March 2027, Smíchov. Anna"):
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"status": "ok", "units": 12}
+    assert client.get("/health").json() == {"status": "ok", "units": 12, "storage": "memory"}
 
 
 def test_email_gets_reply_with_verified_offers(client):

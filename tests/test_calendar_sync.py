@@ -118,7 +118,8 @@ def test_webhook_endpoint_and_alert_log(inventory):
             "check_in": "2027-03-10", "check_out": "2027-03-13"}
     assert client.post("/webhooks/calendar", json=body).json()["status"] == "applied"
     assert client.post("/webhooks/calendar", json=body).json()["status"] == "duplicate"
-    assert len(client.get("/calendar-events").json()) == 2
+    log = client.get("/calendar-events").json()
+    assert len(log) == 1 and log[0]["duplicates"] == 1  # one event, delivered twice
     assert client.get("/calendar-events", params={"alerts_only": True}).json() == []
     bad = {**body, "event_id": "evt-10", "check_out": "2027-03-01"}
     assert client.post("/webhooks/calendar", json=bad).status_code == 422

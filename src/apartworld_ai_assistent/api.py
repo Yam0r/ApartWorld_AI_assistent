@@ -5,7 +5,6 @@ Run (Swagger UI at http://127.0.0.1:8000/docs):
 """
 
 import os
-import threading
 from collections.abc import Callable
 from datetime import datetime
 
@@ -21,6 +20,13 @@ from apartworld_ai_assistent.pipeline import (
     Resolution,
     ResolutionAction,
     handle_email,
+)
+from apartworld_ai_assistent.stores import (
+    EventStore,
+    InMemoryEventStore,
+    InMemoryRequestStore,
+    NotInQueueError,
+    RequestStore,
 )
 
 
@@ -50,59 +56,26 @@ CONFLICT = {409: {
 }}
 
 
-class RequestStore:
-    """In-memory store. Enough for the demo; a real system uses the database."""
-
-    def __init__(self):
-        self._items: dict[str, ProcessedRequest] = {}
-        self._lock = threading.Lock()
-
-    def add(self, item: ProcessedRequest) -> None:
-        with self._lock:
-            self._items[item.id] = item
-
-    def get(self, item_id: str) -> ProcessedRequest | None:
-        return self._items.get(item_id)
-
-    def resolve(self, item_id: str, resolution: Resolution) -> ProcessedRequest:
-        """Close a review item once. Raises KeyError / ValueError for the API to map."""
-        with self._lock:
-            item = self._items.get(item_id)
-            if item is None:
-                raise KeyError(item_id)
-            if item.status != RequestStatus.MANUAL_REVIEW:
-                raise ValueError("request is not in the review queue")
-            if item.resolution is not None:
-                raise ValueError("already resolved")
-            updated = item.model_copy(update={"resolution": resolution})
-            self._items[item_id] = updated
-            return updated
-
-    def list(self, status: RequestStatus | None = None) -> list[ProcessedRequest]:
-        with self._lock:
-            items = list(self._items.values())
-        if status:
-            items = [i for i in items if i.status == status]
-        return sorted(items, key=lambda i: i.received_at)
-
-
 def create_app(
     llm: LlmClient,
     inventory: Inventory,
     now: Callable[[], datetime] = datetime.now,
+    requests: RequestStore | None = None,
+    events: EventStore | None = None,
+    storage: str = "memory",
 ) -> FastAPI:
     app = FastAPI(
         title="Apart World booking assistant",
         description="Scenario 2: incoming email -> verified offer or a task for a person.",
         version="0.1.0",
     )
-    store = RequestStore()
-    calendar = CalendarSync(inventory, now)
+    store = requests or InMemoryRequestStore()
+    calendar = CalendarSync(inventory, now, events or InMemoryEventStore())
     app.state.store = store
 
     @app.get("/health", tags=["service"])
     def health() -> dict:
-        return {"status": "ok", "units": len(inventory.units)}
+        return {"status": "ok", "units": len(inventory.units), "storage": storage}
 
     @app.post("/requests", status_code=201, tags=["requests"])
     def create_request(body: EmailIn) -> ProcessedRequest:
@@ -144,7 +117,9 @@ def create_app(
         )
         try:
             return store.resolve(request_id, resolution)
-        except ValueError as e:
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail="request not found") from e
+        except NotInQueueError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
 
     @app.post("/webhooks/calendar", tags=["webhooks"])
@@ -161,10 +136,24 @@ def create_app(
 
 
 def create_app_from_env() -> FastAPI:
-    """Real LLM from .env. APP_FIXED_NOW pins the clock for the test data."""
+    """Real LLM and PostgreSQL from .env.
+
+    DATABASE_URL set -> PostgreSQL (run `alembic upgrade head` first);
+    not set -> in-memory storage, data is lost on restart.
+    APP_FIXED_NOW pins the clock for the test data.
+    """
     from dotenv import load_dotenv
 
     load_dotenv()
     fixed = os.environ.get("APP_FIXED_NOW")
     now = (lambda: datetime.fromisoformat(fixed)) if fixed else datetime.now
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        from apartworld_ai_assistent.db import SqlEventStore, SqlRequestStore, make_engine
+
+        engine = make_engine(url)
+        return create_app(
+            OpenAiCompatibleClient.from_env(), load_inventory(), now,
+            requests=SqlRequestStore(engine), events=SqlEventStore(engine), storage="postgresql",
+        )
     return create_app(OpenAiCompatibleClient.from_env(), load_inventory(), now)
