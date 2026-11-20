@@ -189,3 +189,64 @@ def test_root_redirects_to_swagger(client):
     assert response.status_code == 307
     assert response.headers["location"] == "/docs"
     assert "/" not in client.get("/openapi.json").json()["paths"]
+
+
+# --- large groups ---
+
+SCHOOL = {"check_in": "2027-03-10", "check_out": "2027-03-13", "guests": 40,
+          "language": "cs", "preferences": ["Smíchov"], "client_name": "Jana"}
+
+
+def group_client(**overrides):
+    return client_with({ExtractedRequest: {**SCHOOL, **overrides},
+                        ReplyText: LlmError("group reply is not written by the LLM")})
+
+
+def test_group_keeps_the_parsed_request_for_staff():
+    body = post(group_client())
+    assert body["status"] == "manual_review" and body["reason"] == "large_group"
+    assert body["request"]["guests"] == 40
+    assert body["request"]["client_name"] == "Jana"
+
+
+def test_group_gets_free_units_of_any_size_requested_district_first():
+    offers = post(group_client())["offers"]
+    ids = [o["unit_id"] for o in offers]
+    # Smíchov units first; far districts kept: a group may need them
+    assert ids[:2] == ["river-deluxe-suite", "victory-castle-suite"]
+    assert "old-town-residence" in ids
+    assert all(o["max_guests"] for o in offers)
+    assert "dicaprio-penthouse" not in ids  # booked on these dates
+
+
+def test_group_note_says_whether_the_group_fits():
+    body = post(group_client())
+    places = sum(o["max_guests"] for o in body["offers"])
+    assert f"{places} places in total" in body["staff_note"]
+    assert "enough for the whole group" in body["staff_note"]
+    huge = post(group_client(guests=500))
+    assert "NOT enough" in huge["staff_note"]
+
+
+def test_group_note_says_whether_the_district_alone_is_enough():
+    # Smíchov: River Deluxe (8) + Victory Castle (16) = 24 places for 40 guests
+    note = post(group_client())["staff_note"]
+    assert "In or near the requested district: 2 units, 24 places (other districts are needed)" in note
+    small = post(group_client(guests=20))["staff_note"]
+    assert "24 places (fits there)" in small
+
+
+def test_group_gets_a_translated_draft_reply():
+    body = post(group_client())
+    assert body["reply_text"].startswith(
+        "Děkujeme za Vaši poptávku! Pro skupinu 40 osob v termínu 10.03.2027"
+    )
+    assert body["reply_text"].endswith("S pozdravem,\ntým Apart World")
+
+
+def test_staff_can_send_the_group_draft_as_is():
+    client = group_client()
+    body = post(client)
+    resolved = client.post(f"/review-queue/{body['id']}/resolve",
+                           json={"action": "reply_sent", "resolved_by": "staff"}).json()
+    assert resolved["resolution"]["reply_text"] == body["reply_text"]

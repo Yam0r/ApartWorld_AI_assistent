@@ -31,13 +31,16 @@ class SearchResult(BaseModel):
 PROXIMITY_ORDER = {"requested": 0, "nearby": 1, "other": 2}
 
 
-def rank_by_preferences(offers: list[Offer], preferences: list[str]) -> list[Offer]:
+def rank_by_preferences(
+    offers: list[Offer], preferences: list[str], keep_far: bool = False,
+) -> list[Offer]:
     """Apply the client's district wish.
 
     - requested district first, then neighbouring districts, price order kept;
     - other districts are dropped, so the far end of Prague is not offered;
     - only if nothing is in or near the district, other districts are returned
       (marked "other") so the client still gets an answer.
+    keep_far=True keeps far districts at the end (staff building a group package).
     No known district in the preferences -> offers unchanged.
     """
     wanted = requested_districts(preferences)
@@ -45,7 +48,8 @@ def rank_by_preferences(offers: list[Offer], preferences: list[str]) -> list[Off
         return offers
     tagged = [o.model_copy(update={"proximity": proximity(o.unit.district, wanted)}) for o in offers]
     close = [o for o in tagged if o.proximity != "other"]
-    return sorted(close or tagged, key=lambda o: PROXIMITY_ORDER[o.proximity])
+    chosen = tagged if keep_far else (close or tagged)
+    return sorted(chosen, key=lambda o: PROXIMITY_ORDER[o.proximity])
 
 
 def _sorted_listings(listings: list[Listing]) -> list[Listing]:

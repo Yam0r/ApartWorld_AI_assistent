@@ -109,3 +109,9 @@ def test_today_is_passed_to_the_model():
     llm = llm_answer()
     parse_email(EMAIL, llm, TODAY)
     assert "2026-11-19" in llm.calls[0][0]
+
+
+def test_large_group_keeps_the_request():
+    result = parse_email(EMAIL, llm_answer(guests=40), TODAY)
+    assert result.status == IntakeStatus.MANUAL_REVIEW
+    assert result.request.guests == 40

@@ -113,19 +113,18 @@ def parse_email(email_text: str, llm: LlmClient, today: date) -> IntakeResult:
         return manual("dates_in_past")
     if raw.guests < 1:
         return manual("invalid_guests")
-    if raw.guests > MAX_AUTO_GUESTS:
-        return manual("large_group")
-
-    return IntakeResult(
-        status=IntakeStatus.READY,
-        extracted=raw,
-        request=BookingRequest(
-            check_in=raw.check_in,
-            check_out=check_out,
-            guests=raw.guests,
-            language=raw.language,
-            budget_czk=raw.budget_czk,
-            preferences=raw.preferences,
-            client_name=raw.client_name,
-        ),
+    request = BookingRequest(
+        check_in=raw.check_in,
+        check_out=check_out,
+        guests=raw.guests,
+        language=raw.language,
+        budget_czk=raw.budget_czk,
+        preferences=raw.preferences,
+        client_name=raw.client_name,
     )
+    if raw.guests > MAX_AUTO_GUESTS:
+        # A valid request, just too big for one unit: keep it for the person who builds the package.
+        return IntakeResult(status=IntakeStatus.MANUAL_REVIEW, reason="large_group",
+                            extracted=raw, request=request)
+
+    return IntakeResult(status=IntakeStatus.READY, extracted=raw, request=request)
